@@ -1,0 +1,2 @@
+# 2DDistanceFieldGenerator
+根据2D图片生成距离场

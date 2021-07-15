@@ -1,5 +1,6 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
+#include <ctime>
 
 constexpr int spreadFactor = 64;
 
@@ -57,14 +58,15 @@ std::vector<cv::Point2i> GetAllNeighbors(const cv::Point2i parent, const cv::Siz
 	return neighbors;
 }
 
-float CalculateDistance(const cv::Point2i parent, const cv::Point2i neighbor)
+float CalculateSquareDistance(const cv::Point2i& parent, const cv::Point2i& neighbor)
 {
-	float distance = sqrt((neighbor - parent).dot(neighbor - parent));
-	return distance;
+	float squareDistance = (neighbor - parent).dot(neighbor - parent);
+	return squareDistance;
 }
 
-void GenerateDistanceField(const cv::Mat src, cv::Mat des, const int spreadFactor)
+void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFactor)
 {
+	int squareSpreadFactor = pow(spreadFactor, 2);
 	// TODO: 生成距离场的算法
 	// 对每个像素
 	for (int i = 0; i < src.rows; i++)
@@ -76,18 +78,22 @@ void GenerateDistanceField(const cv::Mat src, cv::Mat des, const int spreadFacto
 			neighbors = GetAllNeighbors(self, srcSize, spreadFactor);
 
 			float nearestOppositeDistance;
+			float squreNearestOppositeDistance;
 			// 这个像素是白
 			if (src.at<cv::Vec3b>(self)[0] >= 128)
 			{
 				nearestOppositeDistance = spreadFactor;
+				squreNearestOppositeDistance = squareSpreadFactor;
 				for (auto neighbor : neighbors)
 				{
 					if (src.at<cv::Vec3b>(neighbor)[0] < 128)
 					{
-						float distance = CalculateDistance(self, neighbor);
-						if (distance < nearestOppositeDistance)
+						float squareDistance = CalculateSquareDistance(self, neighbor);
+						if (squareDistance > squareSpreadFactor) continue;
+						if (squareDistance < squreNearestOppositeDistance)
 						{
-							nearestOppositeDistance = distance;
+							nearestOppositeDistance = sqrt(squareDistance);
+							squreNearestOppositeDistance = pow(nearestOppositeDistance, 2);
 						}
 					}
 				}
@@ -96,14 +102,17 @@ void GenerateDistanceField(const cv::Mat src, cv::Mat des, const int spreadFacto
 			else
 			{
 				nearestOppositeDistance = -spreadFactor;
+				squreNearestOppositeDistance = squareSpreadFactor;
 				for (auto neighbor : neighbors)
 				{
 					if (src.at<cv::Vec3b>(neighbor)[0] >= 128)
 					{
-						float distance = CalculateDistance(self, neighbor);
-						if (-distance > nearestOppositeDistance)
+						float squareDistance = CalculateSquareDistance(self, neighbor);
+						if (squareDistance > squareSpreadFactor) continue;
+						if (squareDistance < squreNearestOppositeDistance)
 						{
-							nearestOppositeDistance = -distance;
+							nearestOppositeDistance = -sqrt(squareDistance);
+							squreNearestOppositeDistance = pow(nearestOppositeDistance, 2);
 						}
 					}
 				}
@@ -122,13 +131,15 @@ void GenerateDistanceField(const cv::Mat src, cv::Mat des, const int spreadFacto
 
 int main()
 {
-	cv::String filePath = "T_Placards_01_D.png";
+	cv::String filePath = "gan1024.png";
 	srcImg = ReadImage(filePath);
 	srcSize = cv::Size(srcImg.cols, srcImg.rows);
 	desImg = cv::Mat(srcSize, CV_8UC1, uchar(0));
 	
-	// PixelProcessing(srcImg, desImg);
+	clock_t start = clock();
 	GenerateDistanceField(srcImg, desImg, spreadFactor);
+	clock_t end = clock();
+	std::cout << end - start << "ms" << std::endl;
 
 	cv::cvtColor(srcImg, srcImg, cv::COLOR_RGB2BGR);
 	cv::resize(srcImg, srcImg, cv::Size(700, 700));
@@ -136,10 +147,10 @@ int main()
 
 	//cv::imshow("src", srcImg);
 	//cv::imshow("des", desImg);
-	cv::imwrite("T_Placards_01_DF64_256.png", desImg);
+	cv::imwrite("Result_Gan_DF64_256.png", desImg);
 	cv::resize(desImg, desImg, cv::Size(128, 128));
-	cv::imwrite("T_Placards_01_DF64_128.png", desImg);
+	cv::imwrite("Result_Gan_DF64_128.png", desImg);
 
-	// cv::waitKey(0);
+	cv::waitKey(0);
 	return 0;
 }

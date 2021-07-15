@@ -1,5 +1,7 @@
 x64
+.vs
 *.png
 *.jpg
+test.txt
 !gan1024.png
 !Result_Gan_DF64_128.jpg

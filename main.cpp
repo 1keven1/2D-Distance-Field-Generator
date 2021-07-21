@@ -221,6 +221,7 @@ void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFac
 						if (squareDistance < squreNearestOppositeDistance)
 						{
 							nearestOppositeDistance = sqrt(squareDistance);
+							squreNearestOppositeDistance = squareDistance;
 						}
 					}
 					// 如果黑色找到了白像素
@@ -231,6 +232,7 @@ void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFac
 						if (squareDistance < squreNearestOppositeDistance)
 						{
 							nearestOppositeDistance = -sqrt(squareDistance);
+							squreNearestOppositeDistance = squareDistance;
 						}
 					}
 				}

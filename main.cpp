@@ -2,15 +2,18 @@
 #include <opencv2/opencv.hpp>
 #include <ctime>
 #include <string>
+#include <fstream>
 
 constexpr auto SQRT2 = 1.41421356;
-constexpr int spreadFactor = 32;
-constexpr int searchingRingWidth = 10;
+int spreadFactor = 32;
+int searchRingWidth = 10;
 
 cv::Mat srcImg;
 cv::Size srcSize;
 cv::Mat desImg;
+std::string saveType;
 
+// 更新进度条
 inline void UpdateProgress(float progress)
 {
 	int barWidth = 70;
@@ -25,6 +28,102 @@ inline void UpdateProgress(float progress)
 	std::cout << "] " << int(progress * 100.0) << " %\r";
 	std::cout.flush();
 };
+
+// 读取配置文件
+void ReadConfig()
+{
+	std::ifstream file("config.txt", std::ios::in);
+	if (!file)
+	{
+		std::cout << "WARNING: 读取config文件失败" << std::endl;
+		system("pause");
+		exit(0);
+	}
+	// 逐行读取
+	while (1)
+	{
+		if (file.eof())
+		{
+			std::cout << "WARNING: config文件无结束指令\"End\"" << std::endl;
+			system("pause");
+			exit(0);
+		}
+		std::string s;
+		file >> s;
+		if (s.compare("SpreadFactor") == 0)
+		{
+			file >> spreadFactor;
+		}
+		else if (s.compare("SearchRingWidth") == 0)
+		{
+			file >> searchRingWidth;
+		}
+		else if (s.compare("SaveType(bmp:0,png:1,jpg:2)") == 0)
+		{
+			int t;
+			file >> t;
+			switch (t)
+			{
+			case 0:
+				saveType = ".bmp";
+				break;
+			case 1:
+				saveType = ".png";
+				break;
+			case 2:
+				saveType = ".jpg";
+				break;
+			default:
+				std::cout << "WARNING: SaveType错误" << std::endl;
+				system("pause");
+				exit(0);
+				break;
+			}
+		}
+		else if (s.compare("End") == 0)
+		{
+			std::cout << "读取Config文件成功" << std::endl;
+			std::cout << "Spread Factor: " << spreadFactor << std::endl;
+			std::cout << "Search Ring Width: " << searchRingWidth << std::endl;
+			std::cout << "============================= Config Read Succeed ============================="<< std::endl;
+			break;
+		}
+		else
+		{
+			std::cout << "WARNING: config文件中有未知属性：" << s << std::endl;
+			system("pause");
+			exit(0);
+			break;
+		}
+	}
+}
+
+// 检查配置文件
+void CheckConfig()
+{
+	bool bWarning = false;
+	if (spreadFactor <= 0)
+	{
+		bWarning = true;
+		std::cout << "WARNING: SpreadFactor小于0" << std::endl;
+	}
+	if (searchRingWidth <= 0)
+	{
+		bWarning = true;
+		std::cout << "WARNING: SearchRingWidth小于0" << std::endl;
+	}
+	if (searchRingWidth > spreadFactor)
+	{
+		bWarning = true;
+		std::cout << "WARNING: SearchRingWidth不能大于SpreadFactor" << std::endl;
+	}
+
+	if (bWarning)
+	{
+		system("pause");
+		exit(0);
+	}
+}
 
 // 读取图片
 cv::Mat ReadImage(const cv::String& fileName)
@@ -212,9 +311,9 @@ void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFac
 			float squreNearestOppositeDistance = squareSpreadFactor;
 
 			// 一圈一圈找
-			for (int t = 0; t < spreadFactor; t = t + searchingRingWidth)
+			for (int t = 0; t < spreadFactor; t = t + searchRingWidth)
 			{
-				int tBig = ((t + searchingRingWidth) > spreadFactor) ? spreadFactor : t + searchingRingWidth;
+				int tBig = ((t + searchRingWidth) > spreadFactor) ? spreadFactor : t + searchRingWidth;
 				std::vector<cv::Point2i> neighbors;
 				neighbors = GetAllPointInRing(self, t, tBig, srcSize);
 				bool bFound = false;
@@ -262,17 +361,21 @@ void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFac
 
 int main(int argc, char* argv[])
 {
-	std::cout << "共有" << argc - 1 << "个文件需要处理" << std::endl;
-	std::cout << "-----------------------------START-----------------------------" << std::endl;
+	ReadConfig();
+	CheckConfig();
+
+	std::cout << "共有" << argc - 1 << "个文件需要处理" << std::endl << std::endl;
+	std::cout << "----------------------------- START -----------------------------" << std::endl;
+	clock_t start = clock();
 	for (int i = 1; i < argc; i++)
 	{
 		// 检查文件格式
 		std::string filePath = argv[i];
 		std::string fileType = filePath.substr(filePath.find_last_of("."), filePath.length());
 		std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
-		if (fileType != ".png" && fileType != ".jpg" && fileType != ".jpeg" && fileType != ".PNG" && fileType != ".JPG" && fileType != ".JPEG")
+		if (fileType != ".png" && fileType != ".jpg" && fileType != ".jpeg" && fileType != ".PNG" && fileType != ".JPG" && fileType != ".JPEG" && fileType != ".bmp" && fileType != ".BMP")
 		{
-			std::cout << "文件" << fileName << "格式有误" << std::endl;
+			std::cout << "WARNING：文件" << fileName << "格式有误" << std::endl;
 			continue;
 		}
 
@@ -289,10 +392,13 @@ int main(int argc, char* argv[])
 
 		// 储存文件
 		int n = filePath.find_last_of(".");
-		std::string DesName = filePath.substr(0, n) + "_DF.png";
+		std::string DesName = filePath.substr(0, n) + "_DF" + saveType;
 		cv::imwrite(DesName, desImg);
 	}
-
+	clock_t end = clock();
+	std::cout << "------------------------------ END ------------------------------" << std::endl;
+	std::cout << "处理完成，本次共处理" << argc - 1 << "个文件" << std::endl;
+	std::cout << "共耗时" << static_cast<float>(end - start) / 1000 << "s" << std::endl;
 	system("pause");
 	return 0;
 }

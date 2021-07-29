@@ -13,6 +13,7 @@ cv::Size srcSize;
 cv::Mat desImg;
 std::string saveType;
 
+// 多线程所需互斥量与条件变量
 std::mutex taskLock;
 std::mutex desLock;
 std::condition_variable taskNotEmpty;
@@ -138,6 +139,27 @@ void CheckConfig()
 		system("pause");
 		exit(0);
 	}
+}
+
+std::vector<std::string> CheckFileType(const int argc, char* argv[])
+{
+	std::vector<std::string> filePaths;
+	for (int i = 1; i < argc; i++)
+	{
+		// 检查文件格式
+		std::string filePath = argv[i];
+		std::string fileType = filePath.substr(filePath.find_last_of("."), filePath.length());
+		std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
+		// 支持PNG，JPG，JPEG，BMP
+		if (fileType != ".png" && fileType != ".jpg" && fileType != ".jpeg" && fileType != ".PNG" && fileType != ".JPG" && fileType != ".JPEG" && fileType != ".bmp" && fileType != ".BMP")
+		{
+			// 不对就跳过
+			std::cout << "WARNING：文件" << fileName << "格式有误" << std::endl;
+			continue;
+		}
+		filePaths.push_back(filePath);
+	}
+	return filePaths;
 }
 
 // 读取图片
@@ -479,28 +501,25 @@ void Clear()
 
 int main(int argc, char* argv[])
 {
+	// 读取配置文件
 	ReadConfig();
 	CheckConfig();
 
-	std::cout << "共有" << argc - 1 << "个文件需要处理" << std::endl << std::endl;
+	// 检查输入的文件类型
+	std::vector<std::string> filePaths = CheckFileType(argc, argv);
+
+	std::cout << "共有" << filePaths.size() << "个文件需要处理" << std::endl << std::endl;
 	std::cout << "----------------------------- START -----------------------------" << std::endl;
+
+	int fileNum = 0;
 	clock_t start = clock();
-	for (int i = 1; i < argc; i++)
+	for (const auto& filePath : filePaths)
 	{
-		// 检查文件格式
-		std::string filePath = argv[i];
-		std::string fileType = filePath.substr(filePath.find_last_of("."), filePath.length());
-		std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
-		// 支持PNG，JPG，JPEG，BMP
-		if (fileType != ".png" && fileType != ".jpg" && fileType != ".jpeg" && fileType != ".PNG" && fileType != ".JPG" && fileType != ".JPEG" && fileType != ".bmp" && fileType != ".BMP")
-		{
-			// 不对就跳过
-			std::cout << "WARNING：文件" << fileName << "格式有误" << std::endl;
-			continue;
-		}
+		fileNum++;
 
 		// 开始处理文件
-		std::cout << "正在处理第" << i << "个文件：" << fileName << std::endl;
+		std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
+		std::cout << "正在处理第" << fileNum << "个文件：" << fileName << std::endl;
 		srcImg = ReadImage(filePath);
 		srcSize = cv::Size(srcImg.cols, srcImg.rows);
 		desImg = cv::Mat(srcSize, CV_8UC1, uchar(0));
@@ -508,18 +527,31 @@ int main(int argc, char* argv[])
 		clock_t start = clock();
 		GenerateDistanceField(srcImg, desImg, spreadFactor);
 		clock_t end = clock();
-		Clear();
-
+		
 		// 储存文件
 		int n = filePath.find_last_of(".");
 		std::string DesName = filePath.substr(0, n) + "_DF" + saveType;
 		cv::imwrite(DesName, desImg);
 		std::cout << std::endl << "处理完成，耗时" << static_cast<float>(end - start) / 1000 << "s" << std::endl << std::endl;
+
+		// 清理变量
+		Clear();
 	}
 	clock_t end = clock();
-	std::cout << "------------------------------ END ------------------------------" << std::endl;
-	std::cout << "处理完成，本次共处理" << argc - 1 << "个文件" << std::endl;
-	std::cout << "共耗时" << static_cast<float>(end - start) / 1000 << "s" << std::endl;
+
+	std::cout << "------------------------------ END ------------------------------" << std::endl << std::endl;
+	std::cout << "处理完成，本次共处理" << filePaths.size() << "个文件" << std::endl;
+	std::cout << "共耗时" << static_cast<float>(end - start) / 1000 << "s" << std::endl << std::endl;;
+	std::cout << "处理完成的文件：" << std::endl;
+
+	// 打印所有输出路径
+	for (const auto& filePath : filePaths)
+	{
+		int n = filePath.find_last_of(".");
+		std::cout << filePath.substr(0, n) + "_DF" + saveType << std::endl;
+	}
+
+	std::cout << std::endl;
 	system("pause");
 	return 0;
 }

@@ -154,6 +154,7 @@ void PixelProcessing(const cv::Mat src, cv::Mat des)
 	}
 }
 
+// DEPRECATED: 获取正方形内所有邻居
 std::vector<cv::Point2i> GetAllNeighbors(const cv::Point2i parent, const cv::Size& matSize, const int& spreadFactor)
 {
 	std::vector<cv::Point2i> neighbors;
@@ -175,12 +176,14 @@ std::vector<cv::Point2i> GetAllNeighbors(const cv::Point2i parent, const cv::Siz
 	return neighbors;
 }
 
+// 计算平方距离
 float CalculateSquareDistance(const cv::Point2i& parent, const cv::Point2i& neighbor)
 {
 	float squareDistance = (neighbor - parent).dot(neighbor - parent);
 	return squareDistance;
 }
 
+// 获取圆环内整数点
 std::vector<cv::Point2i> GetAllPointInRing(const cv::Point2i& center, const int& radiusSmall, const int& radiusBig, const cv::Size& matSize)
 {
 	assert(radiusBig > radiusSmall);
@@ -296,6 +299,7 @@ std::vector<cv::Point2i> GetAllPointInRing(const cv::Point2i& center, const int&
 	return newPoints;
 }
 
+// 生成距离场算法
 void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFactor)
 {
 	int squareSpreadFactor = pow(spreadFactor, 2);
@@ -358,7 +362,6 @@ void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFac
 	UpdateProgress(1);
 }
 
-
 int main(int argc, char* argv[])
 {
 	ReadConfig();
@@ -373,12 +376,15 @@ int main(int argc, char* argv[])
 		std::string filePath = argv[i];
 		std::string fileType = filePath.substr(filePath.find_last_of("."), filePath.length());
 		std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
+		// 支持PNG，JPG，JPEG，BMP
 		if (fileType != ".png" && fileType != ".jpg" && fileType != ".jpeg" && fileType != ".PNG" && fileType != ".JPG" && fileType != ".JPEG" && fileType != ".bmp" && fileType != ".BMP")
 		{
+			// 不对就跳过
 			std::cout << "WARNING：文件" << fileName << "格式有误" << std::endl;
 			continue;
 		}
 
+		// 开始处理文件
 		std::cout << "正在处理第" << i << "个文件：" << fileName << std::endl;
 		srcImg = ReadImage(filePath);
 		srcSize = cv::Size(srcImg.cols, srcImg.rows);
@@ -388,12 +394,11 @@ int main(int argc, char* argv[])
 		GenerateDistanceField(srcImg, desImg, spreadFactor);
 		clock_t end = clock();
 
-		std::cout << std::endl << "耗时" << static_cast<float>(end - start) / 1000 << "s" << std::endl << std::endl;
-
 		// 储存文件
 		int n = filePath.find_last_of(".");
 		std::string DesName = filePath.substr(0, n) + "_DF" + saveType;
 		cv::imwrite(DesName, desImg);
+		std::cout << std::endl << "处理完成，耗时" << static_cast<float>(end - start) / 1000 << "s" << std::endl << std::endl;
 	}
 	clock_t end = clock();
 	std::cout << "------------------------------ END ------------------------------" << std::endl;

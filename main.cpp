@@ -1,5 +1,5 @@
 #include <iostream>
-#include <opencv2/opencv.hpp>
+#include "Concurrence.h"
 #include <ctime>
 #include <string>
 #include <fstream>
@@ -13,8 +13,13 @@ cv::Size srcSize;
 cv::Mat desImg;
 std::string saveType;
 
+std::mutex taskLock;
+std::mutex desLock;
+std::condition_variable taskNotEmpty;
+std::condition_variable taskNotFull;
+
 // 更新进度条
-inline void UpdateProgress(float progress)
+inline void UpdateProgressBar(float progress)
 {
 	int barWidth = 70;
 
@@ -80,9 +85,14 @@ void ReadConfig()
 				break;
 			}
 		}
+		else if (s.compare("MaxThreadNum") == 0)
+		{
+			file >> maxThreadNum;
+		}
 		else if (s.compare("End") == 0)
 		{
 			std::cout << "读取Config文件成功" << std::endl;
+			std::cout << "Max Thread Num: " << maxThreadNum << std::endl;
 			std::cout << "Spread Factor: " << spreadFactor << std::endl;
 			std::cout << "Search Ring Width: " << searchRingWidth << std::endl;
 			std::cout << "============================= Config Read Succeed ============================="<< std::endl;
@@ -105,17 +115,22 @@ void CheckConfig()
 	if (spreadFactor <= 0)
 	{
 		bWarning = true;
-		std::cout << "WARNING: SpreadFactor小于0" << std::endl;
+		std::cout << "WARNING: Config: SpreadFactor小于0" << std::endl;
 	}
 	if (searchRingWidth <= 0)
 	{
 		bWarning = true;
-		std::cout << "WARNING: SearchRingWidth小于0" << std::endl;
+		std::cout << "WARNING: Config: SearchRingWidth小于0" << std::endl;
 	}
 	if (searchRingWidth > spreadFactor)
 	{
 		bWarning = true;
-		std::cout << "WARNING: SearchRingWidth不能大于SpreadFactor" << std::endl;
+		std::cout << "WARNING: Config: SearchRingWidth不能大于SpreadFactor" << std::endl;
+	}
+	if (maxThreadNum <= 0)
+	{
+		bWarning = true;
+		std::cout << "WARNING: Config: MaxThreadNum小于0" << std::endl;
 	}
 
 	if (bWarning)
@@ -139,7 +154,7 @@ cv::Mat ReadImage(const cv::String& fileName)
 	return mat;
 }
 
-// 逐像素处理（测试）
+// DEPRECATED: 逐像素处理（测试）
 void PixelProcessing(const cv::Mat src, cv::Mat des)
 {
 	for (int i = 0; i < src.rows; i++)
@@ -302,64 +317,164 @@ std::vector<cv::Point2i> GetAllPointInRing(const cv::Point2i& center, const int&
 // 生成距离场算法
 void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFactor)
 {
+	// 创建线程并分配任务
+	exitThread = false;
+	std::vector<std::thread*> threads;
+	for (int i = 0; i < maxThreadNum; i++)
+	{
+		cv::Mat mat;
+		src.copyTo(mat);
+		mats.push_back(mat);
+		std::thread* t = new std::thread([=] {ThreadRun(i); });
+		threads.push_back(t);
+	}
+
 	int squareSpreadFactor = pow(spreadFactor, 2);
 	// 对每个像素
 	for (int i = 0; i < srcSize.height; i++)
 	{
 		for (int j = 0; j < srcSize.width; j++)
 		{
-			// 船新算法
-			cv::Point self(j, i);
-			bool bWhite = src.at<cv::Vec3b>(self)[0] >= 128;
-			float nearestOppositeDistance = bWhite ? spreadFactor : -spreadFactor;
-			float squreNearestOppositeDistance = squareSpreadFactor;
-
-			// 一圈一圈找
-			for (int t = 0; t < spreadFactor; t = t + searchRingWidth)
-			{
-				int tBig = ((t + searchRingWidth) > spreadFactor) ? spreadFactor : t + searchRingWidth;
-				std::vector<cv::Point2i> neighbors;
-				neighbors = GetAllPointInRing(self, t, tBig, srcSize);
-				bool bFound = false;
-				for (const auto& neighbor : neighbors)
-				{
-					// 如果白色找到了黑像素
-					if (src.at<cv::Vec3b>(neighbor)[0] < 128 && bWhite)
-					{
-						bFound = true;
-						float squareDistance = CalculateSquareDistance(self, neighbor);
-						if (squareDistance < squreNearestOppositeDistance)
-						{
-							nearestOppositeDistance = sqrt(squareDistance);
-							squreNearestOppositeDistance = squareDistance;
-						}
-					}
-					// 如果黑色找到了白像素
-					else if (src.at<cv::Vec3b>(neighbor)[0] >= 128 && !bWhite)
-					{
-						bFound = true;
-						float squareDistance = CalculateSquareDistance(self, neighbor);
-						if (squareDistance < squreNearestOppositeDistance)
-						{
-							nearestOppositeDistance = -sqrt(squareDistance);
-							squreNearestOppositeDistance = squareDistance;
-						}
-					}
-				}
-				// 找到了直接跳出
-				if (bFound) break;
-			}
-			// 映射到[0, 1]
-			float finalResult = (nearestOppositeDistance + spreadFactor) / (2 * spreadFactor);
-			// 写入目标图片
-			des.at<uchar>(self) = finalResult * 255;
+			cv::Point2i self(j, i);
+			// 向任务队列添加任务
+			TaskData task = { self, des, spreadFactor, squareSpreadFactor };
+			AddTask(task);
 		}
 		if (i % 10 == 0)
 		{
-			UpdateProgress(static_cast<float>(i) / srcSize.height);
+			UpdateProgressBar(static_cast<float>(i) / srcSize.height);
 		}
 	}
-	UpdateProgress(1);
+	UpdateProgressBar(1);
+
+	exitThread = true;
+	// 这里为了防止有的线程还在等待taskNotEmpty，导致线程阻塞
+	taskNotEmpty.notify_all();
+	// 合并线程
+	for (const auto& t : threads)
+	{
+		t->join();
+		delete t;
+	}
+}
+
+// 添加任务
+void AddTask(const TaskData& data)
+{
+	while (1)
+	{
+		std::unique_lock l(taskLock);
+		// 如果任务队列有空位
+		if (taskQueue.size() < maxTaskQueueSIze)
+		{
+			taskQueue.push(data);
+			l.unlock();
+			taskNotEmpty.notify_all();
+			break;
+		}
+		// 等待任务队列有空位
+		else
+		{
+			taskNotFull.wait(l);
+		}
+	}
+}
+
+// 线程任务
+void ThreadRun(const int& id)
+{
+	while (1)
+	{
+		std::unique_lock l(taskLock);
+		//如果任务队列有任务
+		if (!taskQueue.empty())
+		{
+			TaskData data = taskQueue.front();
+			taskQueue.pop();
+			l.unlock();
+			// 进行计算任务
+			Task(data, id);
+			taskNotFull.notify_all();
+		}
+		// 如果任务完成则跳出循环
+		else if (exitThread)
+		{
+			break;
+		}
+		// 等待任务队列加入任务
+		else
+		{
+			taskNotEmpty.wait(l);
+		}
+	}
+}
+
+// 计算任务
+void Task(TaskData data, const int& id)
+{
+	bool bWhite = mats[id].at<cv::Vec3b>(data.self)[0] >= 128;
+
+	float nearestOppositeDistance = bWhite ? spreadFactor : -spreadFactor;
+	float squreNearestOppositeDistance = data.squareSpreadFactor;
+
+	// 一圈一圈步进寻找
+	for (int t = 0; t < spreadFactor; t = t + searchRingWidth)
+	{
+		int tBig = ((t + searchRingWidth) > spreadFactor) ? spreadFactor : t + searchRingWidth;
+		std::vector<cv::Point2i> neighbors;
+		neighbors = GetAllPointInRing(data.self, t, tBig, srcSize);
+		bool bFound = false;
+
+		std::vector<PixelData> neighborData;
+
+		for (const auto& neighbor : neighbors)
+		{
+			PixelData pd = { neighbor, mats[id].at<cv::Vec3b>(neighbor)[0] };
+			neighborData.push_back(pd);
+		}
+
+		for (const auto& neighbor : neighborData)
+		{
+			// 如果白色找到了黑像素
+			if (neighbor.color < 128 && bWhite)
+			{
+				bFound = true;
+				float squareDistance = CalculateSquareDistance(data.self, neighbor.location);
+				if (squareDistance < squreNearestOppositeDistance)
+				{
+					nearestOppositeDistance = sqrt(squareDistance);
+					squreNearestOppositeDistance = squareDistance;
+				}
+			}
+			// 如果黑色找到了白像素
+			else if (neighbor.color >= 128 && !bWhite)
+			{
+				bFound = true;
+				float squareDistance = CalculateSquareDistance(data.self, neighbor.location);
+				if (squareDistance < squreNearestOppositeDistance)
+				{
+					nearestOppositeDistance = -sqrt(squareDistance);
+					squreNearestOppositeDistance = squareDistance;
+				}
+			}
+		}
+		// 找到了直接跳出
+		if (bFound) break;
+	}
+	// 映射到[0, 1]
+	float finalResult = (nearestOppositeDistance + spreadFactor) / (2 * spreadFactor);
+
+	// 写入目标图片
+	std::unique_lock dl(desLock);
+	data.des.at<uchar>(data.self) = finalResult * 255;
+	dl.unlock();
+}
+
+void Clear()
+{
+	std::queue<TaskData> empty;
+	std::swap(empty, taskQueue);
+	mats.clear();
 }
 
 int main(int argc, char* argv[])
@@ -393,6 +508,7 @@ int main(int argc, char* argv[])
 		clock_t start = clock();
 		GenerateDistanceField(srcImg, desImg, spreadFactor);
 		clock_t end = clock();
+		Clear();
 
 		// 储存文件
 		int n = filePath.find_last_of(".");

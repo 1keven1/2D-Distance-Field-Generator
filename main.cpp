@@ -90,13 +90,18 @@ void ReadConfig()
 		{
 			file >> maxThreadNum;
 		}
+		else if (s.compare("MaxTaskQueueSize") == 0)
+		{
+			file >> maxTaskQueueSize;
+		}
 		else if (s.compare("End") == 0)
 		{
 			std::cout << "读取Config文件成功" << std::endl;
 			std::cout << "Max Thread Num: " << maxThreadNum << std::endl;
+			std::cout << "Max Task Queue Size: " << maxTaskQueueSize << std::endl;
 			std::cout << "Spread Factor: " << spreadFactor << std::endl;
 			std::cout << "Search Ring Width: " << searchRingWidth << std::endl;
-			std::cout << "============================= Config Read Succeed ============================="<< std::endl;
+			std::cout << "============================= Config Read End ============================="<< std::endl;
 			break;
 		}
 		else
@@ -116,22 +121,27 @@ void CheckConfig()
 	if (spreadFactor <= 0)
 	{
 		bWarning = true;
-		std::cout << "WARNING: Config: SpreadFactor小于0" << std::endl;
+		std::cout << "WARNING: SpreadFactor小于0" << std::endl;
 	}
 	if (searchRingWidth <= 0)
 	{
 		bWarning = true;
-		std::cout << "WARNING: Config: SearchRingWidth小于0" << std::endl;
+		std::cout << "WARNING: SearchRingWidth小于0" << std::endl;
 	}
 	if (searchRingWidth > spreadFactor)
 	{
 		bWarning = true;
-		std::cout << "WARNING: Config: SearchRingWidth不能大于SpreadFactor" << std::endl;
+		std::cout << "WARNING: SearchRingWidth不能大于SpreadFactor" << std::endl;
 	}
 	if (maxThreadNum <= 0)
 	{
 		bWarning = true;
-		std::cout << "WARNING: Config: MaxThreadNum小于0" << std::endl;
+		std::cout << "WARNING: MaxThreadNum小于0" << std::endl;
+	}
+	if (maxTaskQueueSize < maxThreadNum)
+	{
+		bWarning = true;
+		std::cout << "WARNING: MaxTaskQueueSize小于MaxThreadNum" << std::endl;
 	}
 
 	if (bWarning)
@@ -141,6 +151,7 @@ void CheckConfig()
 	}
 }
 
+// 检查文件类别
 std::vector<std::string> CheckFileType(const int argc, char* argv[])
 {
 	std::vector<std::string> filePaths;
@@ -154,11 +165,12 @@ std::vector<std::string> CheckFileType(const int argc, char* argv[])
 		if (fileType != ".png" && fileType != ".jpg" && fileType != ".jpeg" && fileType != ".PNG" && fileType != ".JPG" && fileType != ".JPEG" && fileType != ".bmp" && fileType != ".BMP")
 		{
 			// 不对就跳过
-			std::cout << "WARNING：文件" << fileName << "格式有误" << std::endl;
+			std::cout << "WARNING：文件" << fileName << "格式有误" << std::endl << std::endl;
 			continue;
 		}
 		filePaths.push_back(filePath);
 	}
+	std::cout << "============================= 文件格式检查完成 =============================" << std::endl;
 	return filePaths;
 }
 
@@ -169,9 +181,7 @@ cv::Mat ReadImage(const cv::String& fileName)
 	mat = cv::imread(fileName, 1);
 	if (mat.empty())
 	{
-		std::cout << "Image " << fileName << "Read Failed" << std::endl;
-		system("Pause");
-		exit(0);
+		std::cout << "WARNING: 文件 " << fileName << "读取失败" << std::endl;
 	}
 	return mat;
 }
@@ -223,9 +233,6 @@ float CalculateSquareDistance(const cv::Point2i& parent, const cv::Point2i& neig
 // 获取圆环内整数点
 std::vector<cv::Point2i> GetAllPointInRing(const cv::Point2i& center, const int& radiusSmall, const int& radiusBig, const cv::Size& matSize)
 {
-	assert(radiusBig > radiusSmall);
-	assert(radiusSmall >= 0);
-
 	std::vector<cv::Point2i> points;
 	// 坐标轴上的
 	for (int i = radiusSmall + 1; i <= radiusBig; i++)
@@ -387,7 +394,7 @@ void AddTask(const TaskData& data)
 	{
 		std::unique_lock l(taskLock);
 		// 如果任务队列有空位
-		if (taskQueue.size() < maxTaskQueueSIze)
+		if (taskQueue.size() < maxTaskQueueSize)
 		{
 			taskQueue.push(data);
 			l.unlock();
@@ -507,6 +514,12 @@ int main(int argc, char* argv[])
 
 	// 检查输入的文件类型
 	std::vector<std::string> filePaths = CheckFileType(argc, argv);
+	if (filePaths.size() <= 0)
+	{
+		std::cout << "没有待处理的文件" << std::endl << std::endl;
+		system("pause");
+		exit(0);
+	}
 
 	std::cout << "共有" << filePaths.size() << "个文件需要处理" << std::endl << std::endl;
 	std::cout << "----------------------------- START -----------------------------" << std::endl;
@@ -520,7 +533,10 @@ int main(int argc, char* argv[])
 		// 开始处理文件
 		std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
 		std::cout << "正在处理第" << fileNum << "个文件：" << fileName << std::endl;
+
 		srcImg = ReadImage(filePath);
+		if (srcImg.empty()) continue;
+
 		srcSize = cv::Size(srcImg.cols, srcImg.rows);
 		desImg = cv::Mat(srcSize, CV_8UC1, uchar(0));
 
@@ -542,7 +558,7 @@ int main(int argc, char* argv[])
 	std::cout << "------------------------------ END ------------------------------" << std::endl << std::endl;
 	std::cout << "处理完成，本次共处理" << filePaths.size() << "个文件" << std::endl;
 	std::cout << "共耗时" << static_cast<float>(end - start) / 1000 << "s" << std::endl << std::endl;;
-	std::cout << "处理完成的文件：" << std::endl;
+	std::cout << "处理完成的文件路径：" << std::endl;
 
 	// 打印所有输出路径
 	for (const auto& filePath : filePaths)

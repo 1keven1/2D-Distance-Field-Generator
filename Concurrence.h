@@ -7,7 +7,7 @@
 #include <condition_variable>
 
 int maxThreadNum = 1;
-int maxTaskQueueSIze = 64;
+int maxTaskQueueSize = 64;
 
 struct TaskData
 {

@@ -22,16 +22,16 @@ std::condition_variable taskNotFull;
 // 更新进度条
 inline void UpdateProgressBar(float progress)
 {
-	int barWidth = 70;
+	constexpr int barWidth = 70;
 
 	std::cout << "[";
-	int pos = barWidth * progress;
+	const int pos = barWidth * progress;
 	for (int i = 0; i < barWidth; ++i) {
 		if (i < pos) std::cout << "=";
 		else if (i == pos) std::cout << ">";
 		else std::cout << " ";
 	}
-	std::cout << "] " << int(progress * 100.0) << " %\r";
+	std::cout << "] " << static_cast<int>(progress * 100.0) << " %\r";
 	std::cout.flush();
 };
 
@@ -158,9 +158,9 @@ std::vector<std::string> CheckFileType(const int argc, char* argv[])
 	for (int i = 1; i < argc; i++)
 	{
 		// 检查文件格式
-		std::string filePath = argv[i];
-		std::string fileType = filePath.substr(filePath.find_last_of("."), filePath.length());
-		std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
+		const std::string filePath = argv[i];
+		const std::string fileType = filePath.substr(filePath.find_last_of("."), filePath.length());
+		const std::string fileName = filePath.substr(filePath.find_last_of("\\") + 1, filePath.length());
 		// 支持PNG，JPG，JPEG，BMP
 		if (fileType != ".png" && fileType != ".jpg" && fileType != ".jpeg" && fileType != ".PNG" && fileType != ".JPG" && fileType != ".JPEG" && fileType != ".bmp" && fileType != ".BMP")
 		{
@@ -241,8 +241,8 @@ std::vector<cv::Point2i> GetAllPointInRing(const cv::Point2i& center, const int&
 	}
 
 	// y = x上的
-	int maxXSmall = floor(radiusSmall / SQRT2);
-	int maxXBig = floor(radiusBig / SQRT2);
+	const int maxXSmall = floor(radiusSmall / SQRT2);
+	const int maxXBig = floor(radiusBig / SQRT2);
 	for (int i = maxXSmall + 1; i <= maxXBig; i++)
 	{
 		points.push_back(cv::Point2i(i, i));
@@ -250,10 +250,10 @@ std::vector<cv::Point2i> GetAllPointInRing(const cv::Point2i& center, const int&
 
 	// 其他的
 	// 下部分
-	int maxXBottomSmall = radiusSmall - 1;
-	int maxYBottomSmall = floor(sqrt(radiusSmall * radiusSmall - maxXBottomSmall * maxXBottomSmall));
-	int maxXBottomBig = radiusBig - 1;
-	int maxYBottomBig = floor(sqrt(radiusBig * radiusBig - maxXBottomBig * maxXBottomBig));
+	const int maxXBottomSmall = radiusSmall - 1;
+	const int maxYBottomSmall = floor(sqrt(radiusSmall * radiusSmall - maxXBottomSmall * maxXBottomSmall));
+	const int maxXBottomBig = radiusBig - 1;
+	const int maxYBottomBig = floor(sqrt(radiusBig * radiusBig - maxXBottomBig * maxXBottomBig));
 
 	for (int i = 1; i <= maxYBottomBig; i++)
 	{
@@ -280,7 +280,7 @@ std::vector<cv::Point2i> GetAllPointInRing(const cv::Point2i& center, const int&
 	// 上部分
 	for (int i = maxYBottomBig + 1; i <= maxXBig; i++)
 	{
-		int xMaxUpper = floor(sqrt(radiusBig * radiusBig - i * i));
+		const int xMaxUpper = floor(sqrt(radiusBig * radiusBig - i * i));
 		// 这里与上面一样，只要比小圆对角线y值大，就一定不在小圆里，不需要判断
 		int xMaxUpperSmall = 0;
 		if (i <= maxXSmall)
@@ -358,7 +358,7 @@ void GenerateDistanceField(const cv::Mat& src, cv::Mat des, const int& spreadFac
 		threads.push_back(t);
 	}
 
-	int squareSpreadFactor = pow(spreadFactor, 2);
+	const int squareSpreadFactor = pow(spreadFactor, 2);
 	// 对每个像素
 	for (int i = 0; i < srcSize.height; i++)
 	{
@@ -439,9 +439,9 @@ void ThreadRun(const int& id)
 }
 
 // 计算任务
-void Task(TaskData data, const int& id)
+void Task(TaskData& data, const int& id)
 {
-	bool bWhite = mats[id].at<cv::Vec3b>(data.self)[0] >= 128;
+	const bool bWhite = mats[id].at<cv::Vec3b>(data.self)[0] >= 128;
 
 	float nearestOppositeDistance = bWhite ? spreadFactor : -spreadFactor;
 	float squreNearestOppositeDistance = data.squareSpreadFactor;
@@ -449,7 +449,7 @@ void Task(TaskData data, const int& id)
 	// 一圈一圈步进寻找
 	for (int t = 0; t < spreadFactor; t = t + searchRingWidth)
 	{
-		int tBig = ((t + searchRingWidth) > spreadFactor) ? spreadFactor : t + searchRingWidth;
+		const int tBig = ((t + searchRingWidth) > spreadFactor) ? spreadFactor : t + searchRingWidth;
 		std::vector<cv::Point2i> neighbors;
 		neighbors = GetAllPointInRing(data.self, t, tBig, srcSize);
 		bool bFound = false;
@@ -468,7 +468,7 @@ void Task(TaskData data, const int& id)
 			if (neighbor.color < 128 && bWhite)
 			{
 				bFound = true;
-				float squareDistance = CalculateSquareDistance(data.self, neighbor.location);
+				const float squareDistance = CalculateSquareDistance(data.self, neighbor.location);
 				if (squareDistance < squreNearestOppositeDistance)
 				{
 					nearestOppositeDistance = sqrt(squareDistance);
@@ -491,7 +491,7 @@ void Task(TaskData data, const int& id)
 		if (bFound) break;
 	}
 	// 映射到[0, 1]
-	float finalResult = (nearestOppositeDistance + spreadFactor) / (2 * spreadFactor);
+	const float finalResult = (nearestOppositeDistance + spreadFactor) / (2 * spreadFactor);
 
 	// 写入目标图片
 	std::unique_lock dl(desLock);

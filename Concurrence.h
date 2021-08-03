@@ -25,7 +25,7 @@ struct PixelData
 
 void AddTask(const TaskData& data);
 void ThreadRun(const int& id);
-void Task(TaskData data, const int& id);
+void Task(TaskData& data, const int& id);
 void Clear();
 
 std::queue<TaskData> taskQueue;

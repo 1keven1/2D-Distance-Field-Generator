@@ -1,5 +1,7 @@
 MaxThreadNum
-16
+12
+MaxTaskQueueSize
+64
 SpreadFactor
 32
 SearchRingWidth

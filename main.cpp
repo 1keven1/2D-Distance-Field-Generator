@@ -3,6 +3,8 @@
 #include <ctime>
 #include <string>
 #include <fstream>
+#include  <direct.h>  
+#include <filesystem>
 
 constexpr auto SQRT2 = 1.41421356;
 int spreadFactor = 32;
@@ -36,9 +38,9 @@ inline void UpdateProgressBar(float progress)
 };
 
 // 读取配置文件
-void ReadConfig()
+void ReadConfig(const std::string& folderPath)
 {
-	std::ifstream file("config.txt", std::ios::in);
+	std::ifstream file(folderPath + "\\config.txt", std::ios::in);
 	if (!file)
 	{
 		std::cout << "WARNING: 读取config文件失败" << std::endl;
@@ -508,8 +510,10 @@ void Clear()
 
 int main(int argc, char* argv[])
 {
+	std::string exePath = argv[0];
+	std::string folderPath = exePath.substr(0, exePath.find_last_of('\\'));
 	// 读取配置文件
-	ReadConfig();
+	ReadConfig(folderPath);
 	CheckConfig();
 
 	// 检查输入的文件类型
